@@ -17,7 +17,6 @@
       "fieldtype": "Link",
       "label": "Bank Account",
       "options": "Bank Account",
-      "reqd": 1
     },
     {
       "fieldname": "payment_date",
