@@ -1,2 +1,0 @@
-include requirements.txt
-recursive-include check_run_manager *.json *.py *.js *.css *.html
