@@ -1,0 +1,104 @@
+﻿{
+  "doctype": "DocType",
+  "name": "Check Run Item",
+  "module": "Check Run Manager",
+  "istable": 1,
+  "fields": [
+    {
+      "fieldname": "sequence_no",
+      "fieldtype": "Int",
+      "label": "Sequence"
+    },
+    {
+      "fieldname": "supplier",
+      "fieldtype": "Link",
+      "label": "Supplier",
+      "options": "Supplier"
+    },
+    {
+      "fieldname": "supplier_name",
+      "fieldtype": "Data",
+      "label": "Supplier Name"
+    },
+    {
+      "fieldname": "payment_entry",
+      "fieldtype": "Link",
+      "label": "Payment Entry",
+      "options": "Payment Entry"
+    },
+    {
+      "fieldname": "invoice_reference",
+      "fieldtype": "Data",
+      "label": "Invoice Reference"
+    },
+    {
+      "fieldname": "payee_name",
+      "fieldtype": "Data",
+      "label": "Payee Name"
+    },
+    {
+      "fieldname": "payee_address",
+      "fieldtype": "Small Text",
+      "label": "Payee Address"
+    },
+    {
+      "fieldname": "amount",
+      "fieldtype": "Currency",
+      "label": "Amount"
+    },
+    {
+      "fieldname": "discount_amount",
+      "fieldtype": "Currency",
+      "label": "Discount Amount"
+    },
+    {
+      "fieldname": "net_amount",
+      "fieldtype": "Currency",
+      "label": "Net Amount"
+    },
+    {
+      "fieldname": "check_number",
+      "fieldtype": "Int",
+      "label": "Check Number"
+    },
+    {
+      "fieldname": "memo",
+      "fieldtype": "Data",
+      "label": "Memo"
+    },
+    {
+      "fieldname": "print_status",
+      "fieldtype": "Select",
+      "label": "Print Status",
+      "options": "Pending\nPrinted\nFailed\nVoided\nReprinted",
+      "default": "Pending"
+    },
+    {
+      "fieldname": "printed_on",
+      "fieldtype": "Datetime",
+      "label": "Printed On"
+    },
+    {
+      "fieldname": "printed_by",
+      "fieldtype": "Link",
+      "label": "Printed By",
+      "options": "User"
+    },
+    {
+      "fieldname": "void_reason",
+      "fieldtype": "Small Text",
+      "label": "Void Reason"
+    },
+    {
+      "fieldname": "replacement_check_number",
+      "fieldtype": "Int",
+      "label": "Replacement Check Number"
+    },
+    {
+      "fieldname": "reprint_count",
+      "fieldtype": "Int",
+      "label": "Reprint Count",
+      "default": 0
+    }
+  ]
+}

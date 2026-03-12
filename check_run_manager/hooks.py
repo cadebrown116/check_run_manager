@@ -1,0 +1,6 @@
+﻿app_name = "check_run_manager"
+app_title = "Check Run Manager"
+app_publisher = "AB Carter"
+app_description = "Batch supplier check printing for ERPNext"
+app_email = "itsupport@abcarter.com"
+app_license = "MIT"

@@ -1,0 +1,92 @@
+﻿{
+  "doctype": "DocType",
+  "name": "Check Run",
+  "module": "Check Run Manager",
+  "custom": 0,
+  "istable": 0,
+  "fields": [
+    {
+      "fieldname": "company",
+      "fieldtype": "Link",
+      "label": "Company",
+      "options": "Company",
+      "reqd": 1
+    },
+    {
+      "fieldname": "bank_account",
+      "fieldtype": "Link",
+      "label": "Bank Account",
+      "options": "Bank Account",
+      "reqd": 1
+    },
+    {
+      "fieldname": "payment_date",
+      "fieldtype": "Date",
+      "label": "Payment Date",
+      "reqd": 1
+    },
+    {
+      "fieldname": "status",
+      "fieldtype": "Select",
+      "label": "Status",
+      "options": "Draft\nReady to Print\nPrinted\nPartially Voided\nClosed",
+      "default": "Draft"
+    },
+    {
+      "fieldname": "print_format",
+      "fieldtype": "Link",
+      "label": "Print Format",
+      "options": "Print Format"
+    },
+    {
+      "fieldname": "start_check_number",
+      "fieldtype": "Int",
+      "label": "Starting Check Number",
+      "default": 2
+    },
+    {
+      "fieldname": "end_check_number",
+      "fieldtype": "Int",
+      "label": "Ending Check Number",
+      "read_only": 1
+    },
+    {
+      "fieldname": "next_check_number",
+      "fieldtype": "Int",
+      "label": "Next Check Number",
+      "read_only": 1,
+      "default": 2
+    },
+    {
+      "fieldname": "total_checks",
+      "fieldtype": "Int",
+      "label": "Total Checks",
+      "read_only": 1
+    },
+    {
+      "fieldname": "total_amount",
+      "fieldtype": "Currency",
+      "label": "Total Amount",
+      "read_only": 1
+    },
+    {
+      "fieldname": "printed_on",
+      "fieldtype": "Datetime",
+      "label": "Printed On",
+      "read_only": 1
+    },
+    {
+      "fieldname": "printed_by",
+      "fieldtype": "Link",
+      "label": "Printed By",
+      "options": "User",
+      "read_only": 1
+    },
+    {
+      "fieldname": "items",
+      "fieldtype": "Table",
+      "label": "Items",
+      "options": "Check Run Item"
+    }
+  ]
+}
