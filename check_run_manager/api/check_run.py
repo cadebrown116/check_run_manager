@@ -1,6 +1,7 @@
-﻿import frappe
+import frappe
 from frappe import _
-from frappe.utils import now_datetime
+from frappe.utils import nowdate, now_datetime
+from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
 
 
 def format_check_number(number: int) -> str:
@@ -8,68 +9,70 @@ def format_check_number(number: int) -> str:
 
 
 @frappe.whitelist()
-def get_check_run(docname: str):
-    doc = frappe.get_doc("Check Run", docname)
+def create_check_run(company: str, payment_date: str, paid_from_account: str | None = None):
+    doc = frappe.get_doc({
+        "doctype": "Check Run",
+        "company": company,
+        "payment_date": payment_date or nowdate(),
+        "status": "Draft",
+        "start_check_number": 2,
+        "next_check_number": 2,
+        "bank_account": paid_from_account or ""
+    })
+    doc.insert()
     return doc.as_dict()
 
 
 @frappe.whitelist()
-def load_eligible_payments(company: str, bank_account: str):
-    linked_payment_entries = frappe.get_all(
-        "Check Run Item",
-        filters={"docstatus": ["<", 2]},
-        pluck="payment_entry"
-    )
-
+def load_eligible_invoices(company: str, supplier: str | None = None):
     filters = {
         "docstatus": 1,
         "company": company,
-        "payment_type": "Pay",
-        "party_type": "Supplier",
-        "paid_from": bank_account,
+        "outstanding_amount": [">", 0]
     }
 
-    if linked_payment_entries:
-        filters["name"] = ["not in", linked_payment_entries]
+    if supplier:
+        filters["supplier"] = supplier
 
-    payments = frappe.get_all(
-        "Payment Entry",
+    invoices = frappe.get_all(
+        "Purchase Invoice",
         filters=filters,
         fields=[
             "name",
-            "party",
-            "party_name",
+            "supplier",
+            "supplier_name",
             "posting_date",
-            "paid_amount",
-            "reference_no",
+            "due_date",
+            "grand_total",
+            "outstanding_amount",
+            "currency"
         ],
-        order_by="posting_date asc, name asc",
+        order_by="due_date asc, posting_date asc"
     )
 
-    return payments
+    return invoices
 
 
 @frappe.whitelist()
-def add_payments_to_run(check_run_name: str, payment_entry_names: list[str]):
+def add_invoices_to_run(check_run_name: str, invoice_names: list[str]):
     doc = frappe.get_doc("Check Run", check_run_name)
-    existing = {row.payment_entry for row in (doc.items or [])}
+    existing = {row.invoice_reference for row in (doc.items or [])}
 
-    for pe_name in payment_entry_names:
-        if pe_name in existing:
+    for inv_name in invoice_names:
+        if inv_name in existing:
             continue
 
-        pe = frappe.get_doc("Payment Entry", pe_name)
+        inv = frappe.get_doc("Purchase Invoice", inv_name)
 
         doc.append("items", {
-            "supplier": pe.party,
-            "supplier_name": pe.party_name,
-            "payment_entry": pe.name,
-            "amount": pe.paid_amount,
-            "net_amount": pe.paid_amount,
-            "invoice_reference": pe.reference_no or "",
-            "payee_name": pe.party_name or pe.party,
-            "memo": pe.reference_no or pe.name,
-            "print_status": "Pending",
+            "supplier": inv.supplier,
+            "supplier_name": inv.supplier_name,
+            "invoice_reference": inv.name,
+            "payee_name": inv.supplier_name or inv.supplier,
+            "amount": inv.outstanding_amount,
+            "net_amount": inv.outstanding_amount,
+            "memo": inv.name,
+            "print_status": "Pending"
         })
 
     doc.save()
@@ -77,7 +80,11 @@ def add_payments_to_run(check_run_name: str, payment_entry_names: list[str]):
 
 
 @frappe.whitelist()
-def assign_check_numbers(check_run_name: str, starting_number: int | None = None):
+def assign_check_numbers_and_create_payments(
+    check_run_name: str,
+    starting_number: int | None = None,
+    paid_from_account: str | None = None
+):
     doc = frappe.get_doc("Check Run", check_run_name)
 
     if starting_number is None:
@@ -88,22 +95,37 @@ def assign_check_numbers(check_run_name: str, starting_number: int | None = None
     if starting_number < 2:
         frappe.throw(_("Starting Check Number must be 2 or greater."))
 
+    if not paid_from_account and not doc.bank_account:
+        frappe.throw(_("Paid From Account is required to create Payment Entries."))
+
+    paid_from_account = paid_from_account or doc.bank_account
     next_number = starting_number
     sequence = 1
 
     for row in doc.items or []:
-        if row.print_status in ("Voided",):
+        if row.print_status == "Voided":
             continue
+
+        if not row.payment_entry:
+            pe = _make_payment_entry_from_invoice(
+                invoice_name=row.invoice_reference,
+                payment_date=doc.payment_date,
+                paid_from_account=paid_from_account,
+                check_number=next_number
+            )
+            row.payment_entry = pe.name
 
         row.sequence_no = sequence
         row.check_number = next_number
+        row.print_status = "Pending"
+
         sequence += 1
         next_number += 1
 
     doc.start_check_number = starting_number
     doc.next_check_number = next_number
-    doc.calculate_totals()
     doc.status = "Ready to Print"
+    doc.calculate_totals()
     doc.save()
 
     return {
@@ -111,6 +133,21 @@ def assign_check_numbers(check_run_name: str, starting_number: int | None = None
         "message": f"Assigned check numbers {format_check_number(starting_number)} to {format_check_number(next_number - 1)}",
         "doc": doc.as_dict(),
     }
+
+
+def _make_payment_entry_from_invoice(invoice_name: str, payment_date: str, paid_from_account: str, check_number: int):
+    pe = get_payment_entry("Purchase Invoice", invoice_name)
+
+    pe.paid_from = paid_from_account
+    pe.posting_date = payment_date
+    pe.reference_no = format_check_number(check_number)
+
+    if hasattr(pe, "reference_date"):
+        pe.reference_date = payment_date
+
+    pe.insert()
+    pe.submit()
+    return pe
 
 
 @frappe.whitelist()
@@ -133,45 +170,3 @@ def mark_printed(check_run_name: str):
         "message": f"Marked Check Run {doc.name} as printed.",
         "doc": doc.as_dict(),
     }
-
-
-@frappe.whitelist()
-def void_check(check_run_name: str, row_name: str, reason: str):
-    doc = frappe.get_doc("Check Run", check_run_name)
-
-    target = None
-    for row in doc.items or []:
-        if row.name == row_name:
-            target = row
-            break
-
-    if not target:
-        frappe.throw(_("Check Run Item not found."))
-
-    target.print_status = "Voided"
-    target.void_reason = reason
-    doc.status = "Partially Voided"
-    doc.save()
-
-    return {
-        "ok": True,
-        "message": f"Voided check {format_check_number(target.check_number)}",
-        "doc": doc.as_dict(),
-    }
-
-
-@frappe.whitelist()
-def create_check_run(company: str, bank_account: str, payment_date: str, print_format: str | None = None):
-    doc = frappe.get_doc({
-        "doctype": "Check Run",
-        "company": company,
-        "bank_account": bank_account,
-        "payment_date": payment_date,
-        "status": "Draft",
-        "start_check_number": 2,
-        "next_check_number": 2,
-        "print_format": print_format,
-    })
-
-    doc.insert()
-    return doc.as_dict()
