@@ -1,4 +1,4 @@
-frappe.pages["check-run-manager"].on_page_load = function (wrapper) {
+﻿frappe.pages["check-run-manager"].on_page_load = function (wrapper) {
     const page = frappe.ui.make_app_page({
         parent: wrapper,
         title: "Check Run Manager",
@@ -7,7 +7,8 @@ frappe.pages["check-run-manager"].on_page_load = function (wrapper) {
 
     const body = $('<div style="padding:20px; max-width:1400px;"></div>').appendTo(page.body);
 
-    const filters_row = $('<div style="display:grid; grid-template-columns:repeat(5, 1fr); gap:12px; margin-bottom:16px;"></div>').appendTo(body);
+    const filters_row = $('<div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; margin-bottom:16px;"></div>').appendTo(body);
+    const info_row = $('<div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:12px; margin-bottom:16px;"></div>').appendTo(body);
     const actions_row = $('<div style="display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap;"></div>').appendTo(body);
     const table_wrap = $('<div style="margin-top:16px;"></div>').appendTo(body);
 
@@ -52,18 +53,17 @@ frappe.pages["check-run-manager"].on_page_load = function (wrapper) {
         default: frappe.datetime.get_today()
     });
 
-    const starting_number = makeControl(filters_row, {
-        fieldtype: "Int",
-        fieldname: "starting_number",
-        label: "Starting Check Number",
-        reqd: 1,
-        default: 2
-    });
-
-    const check_run_name = makeControl(filters_row, {
+    const check_run_name = makeControl(info_row, {
         fieldtype: "Data",
         fieldname: "check_run_name",
         label: "Check Run Name",
+        read_only: 1
+    });
+
+    const next_check_info = makeControl(info_row, {
+        fieldtype: "Data",
+        fieldname: "next_check_info",
+        label: "Next Check Number",
         read_only: 1
     });
 
@@ -108,9 +108,9 @@ frappe.pages["check-run-manager"].on_page_load = function (wrapper) {
                 <td>${frappe.utils.escape_html(inv.supplier_name || inv.supplier || "")}</td>
                 <td>${frappe.utils.escape_html(inv.name)}</td>
                 <td>${frappe.utils.escape_html(inv.due_date || "")}</td>
-                <td>${formatMoney(inv.outstanding_amount || inv.amount || 0)}</td>
-                <td>${formatCheckNumber(inv.check_number)}</td>
-                <td>${frappe.utils.escape_html(inv.print_status || "Pending")}</td>
+                <td>${formatMoney(inv.outstanding_amount || 0)}</td>
+                <td></td>
+                <td>Pending</td>
             </tr>
         `).join("");
 
@@ -131,90 +131,126 @@ frappe.pages["check-run-manager"].on_page_load = function (wrapper) {
         `).join("");
 
         $("#crm-body").html(html);
+        next_check_info.set_value(formatCheckNumber(doc.next_check_number || ""));
     }
 
     create_btn.on("click", async () => {
-        const r = await frappe.call({
-            method: "check_run_manager.api.check_run.create_check_run",
-            args: {
-                company: getVal(company),
-                payment_date: getVal(payment_date),
-                paid_from_account: getVal(paid_from_account)
-            }
-        });
+        try {
+            const r = await frappe.call({
+                method: "check_run_manager.api.check_run.create_check_run",
+                args: {
+                    company: getVal(company),
+                    payment_date: getVal(payment_date),
+                    paid_from_account: getVal(paid_from_account)
+                }
+            });
 
-        check_run_name.set_value(r.message.name);
-        frappe.show_alert({ message: `Created ${r.message.name}`, indicator: "green" });
+            check_run_name.set_value(r.message.name);
+            next_check_info.set_value(formatCheckNumber(r.message.next_check_number || ""));
+            frappe.show_alert({ message: `Created ${r.message.name}`, indicator: "green" });
+        } catch (e) {
+            console.error(e);
+            frappe.msgprint({
+                title: "Create Check Run Failed",
+                message: e.message || JSON.stringify(e),
+                indicator: "red"
+            });
+        }
     });
 
     load_btn.on("click", async () => {
-        if (!getVal(company)) {
-            frappe.msgprint("Company is required.");
-            return;
-        }
-
-        const r = await frappe.call({
-            method: "check_run_manager.api.check_run.load_eligible_invoices",
-            args: {
-                company: getVal(company),
-                supplier: getVal(supplier)
+        try {
+            if (!getVal(company)) {
+                frappe.msgprint("Company is required.");
+                return;
             }
-        });
 
-        renderInvoices(r.message || []);
-        frappe.show_alert({ message: `Loaded ${(r.message || []).length} invoice(s)`, indicator: "blue" });
+            const r = await frappe.call({
+                method: "check_run_manager.api.check_run.load_eligible_invoices",
+                args: {
+                    company: getVal(company),
+                    supplier: getVal(supplier)
+                }
+            });
+
+            renderInvoices(r.message || []);
+            frappe.show_alert({ message: `Loaded ${(r.message || []).length} invoice(s)`, indicator: "blue" });
+        } catch (e) {
+            console.error(e);
+            frappe.msgprint({
+                title: "Load Eligible Invoices Failed",
+                message: e.message || JSON.stringify(e),
+                indicator: "red"
+            });
+        }
     });
 
     assign_btn.on("click", async () => {
-        if (!getVal(check_run_name)) {
-            frappe.msgprint("Create a Check Run first.");
-            return;
-        }
-
-        const selected = $(".crm-select:checked").map(function () {
-            return $(this).val();
-        }).get();
-
-        if (!selected.length) {
-            frappe.msgprint("Select at least one invoice.");
-            return;
-        }
-
-        await frappe.call({
-            method: "check_run_manager.api.check_run.add_invoices_to_run",
-            args: {
-                check_run_name: getVal(check_run_name),
-                invoice_names: selected
+        try {
+            if (!getVal(check_run_name)) {
+                frappe.msgprint("Create a Check Run first.");
+                return;
             }
-        });
 
-        const r = await frappe.call({
-            method: "check_run_manager.api.check_run.assign_check_numbers_and_create_payments",
-            args: {
-                check_run_name: getVal(check_run_name),
-                starting_number: getVal(starting_number),
-                paid_from_account: getVal(paid_from_account)
+            const selected = $(".crm-select:checked").map(function () {
+                return $(this).val();
+            }).get();
+
+            if (!selected.length) {
+                frappe.msgprint("Select at least one invoice.");
+                return;
             }
-        });
 
-        renderRun(r.message.doc);
-        frappe.show_alert({ message: r.message.message, indicator: "green" });
+            await frappe.call({
+                method: "check_run_manager.api.check_run.add_invoices_to_run",
+                args: {
+                    check_run_name: getVal(check_run_name),
+                    invoice_names: selected
+                }
+            });
+
+            const r = await frappe.call({
+                method: "check_run_manager.api.check_run.assign_check_numbers",
+                args: {
+                    check_run_name: getVal(check_run_name)
+                }
+            });
+
+            renderRun(r.message.doc);
+            frappe.show_alert({ message: r.message.message, indicator: "green" });
+        } catch (e) {
+            console.error(e);
+            frappe.msgprint({
+                title: "Assign Check Numbers Failed",
+                message: e.message || JSON.stringify(e),
+                indicator: "red"
+            });
+        }
     });
 
     printed_btn.on("click", async () => {
-        if (!getVal(check_run_name)) {
-            frappe.msgprint("Create a Check Run first.");
-            return;
-        }
-
-        const r = await frappe.call({
-            method: "check_run_manager.api.check_run.mark_printed",
-            args: {
-                check_run_name: getVal(check_run_name)
+        try {
+            if (!getVal(check_run_name)) {
+                frappe.msgprint("Create a Check Run first.");
+                return;
             }
-        });
 
-        renderRun(r.message.doc);
-        frappe.show_alert({ message: r.message.message, indicator: "green" });
+            const r = await frappe.call({
+                method: "check_run_manager.api.check_run.mark_printed",
+                args: {
+                    check_run_name: getVal(check_run_name)
+                }
+            });
+
+            renderRun(r.message.doc);
+            frappe.show_alert({ message: r.message.message, indicator: "green" });
+        } catch (e) {
+            console.error(e);
+            frappe.msgprint({
+                title: "Mark Printed Failed",
+                message: e.message || JSON.stringify(e),
+                indicator: "red"
+            });
+        }
     });
 };

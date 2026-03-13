@@ -1,4 +1,4 @@
-{
+﻿{
   "doctype": "DocType",
   "name": "Check Run",
   "module": "Check Run Manager",
@@ -15,8 +15,8 @@
     {
       "fieldname": "bank_account",
       "fieldtype": "Link",
-      "label": "Bank Account",
-      "options": "Bank Account"
+      "label": "Paid From Account",
+      "options": "Account"
     },
     {
       "fieldname": "payment_date",
