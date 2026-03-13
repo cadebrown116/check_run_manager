@@ -205,7 +205,7 @@
                 method: "check_run_manager.api.check_run.add_invoices_to_run",
                 args: {
                     check_run_name: getVal(check_run_name),
-                    invoice_names: selected
+                    invoice_names: JSON.stringify(selected)
                 }
             });
 

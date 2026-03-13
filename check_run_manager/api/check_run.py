@@ -65,9 +65,17 @@ def load_eligible_invoices(company: str, supplier: str | None = None):
 
     return invoices
 
+import json
+import frappe
 
 @frappe.whitelist()
-def add_invoices_to_run(check_run_name: str, invoice_names: list[str]):
+def add_invoices_to_run(check_run_name: str, invoice_names):
+    if isinstance(invoice_names, str):
+        invoice_names = json.loads(invoice_names)
+
+    if not isinstance(invoice_names, list):
+        frappe.throw("invoice_names must be a list.")
+
     doc = frappe.get_doc("Check Run", check_run_name)
     existing = {row.invoice_reference for row in (doc.items or [])}
 
@@ -90,7 +98,6 @@ def add_invoices_to_run(check_run_name: str, invoice_names: list[str]):
 
     doc.save()
     return doc.as_dict()
-
 
 @frappe.whitelist()
 def assign_check_numbers(check_run_name: str):
