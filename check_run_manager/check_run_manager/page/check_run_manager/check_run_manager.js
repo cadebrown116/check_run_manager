@@ -42,7 +42,8 @@
         fieldtype: "Link",
         fieldname: "paid_from_account",
         label: "Paid From Account",
-        options: "Account"
+        options: "Account",
+        reqd: 1
     });
 
     const payment_date = makeControl(filters_row, {
@@ -82,12 +83,15 @@
                     <th>Due Date</th>
                     <th>Outstanding</th>
                     <th>Check #</th>
+                    <th>Payment Entry</th>
                     <th>Status</th>
                 </tr>
             </thead>
-            <tbody id="crm-body"></tbody>
+            <tbody></tbody>
         </table>
     `).appendTo(table_wrap);
+
+    const tableBody = table.find("tbody");
 
     function getVal(ctrl) {
         return ctrl.get_value();
@@ -110,11 +114,12 @@
                 <td>${frappe.utils.escape_html(inv.due_date || "")}</td>
                 <td>${formatMoney(inv.outstanding_amount || 0)}</td>
                 <td></td>
+                <td></td>
                 <td>Pending</td>
             </tr>
         `).join("");
 
-        $("#crm-body").html(html);
+        tableBody.html(html);
     }
 
     function renderRun(doc) {
@@ -126,11 +131,12 @@
                 <td></td>
                 <td>${formatMoney(row.amount || 0)}</td>
                 <td>${formatCheckNumber(row.check_number)}</td>
+                <td>${frappe.utils.escape_html(row.payment_entry || "")}</td>
                 <td>${frappe.utils.escape_html(row.print_status || "")}</td>
             </tr>
         `).join("");
 
-        $("#crm-body").html(html);
+        tableBody.html(html);
         next_check_info.set_value(formatCheckNumber(doc.next_check_number || ""));
     }
 
