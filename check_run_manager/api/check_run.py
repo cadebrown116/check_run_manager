@@ -9,6 +9,19 @@ def format_check_number(number: int) -> str:
     return str(int(number)).zfill(6)
 
 
+def check_number_exists(check_number: int) -> bool:
+    return bool(
+        frappe.db.exists(
+            "Check Run Item",
+            {
+                "check_number": check_number,
+                "docstatus": ["<", 2],
+                "print_status": ["!=", "Voided"],
+            },
+        )
+    )
+
+
 def get_next_check_number() -> int:
     max_no = frappe.db.sql("""
         select max(check_number)
@@ -16,21 +29,25 @@ def get_next_check_number() -> int:
         where ifnull(check_number, 0) > 0
     """)[0][0]
 
-    if not max_no:
-        return 2
+    next_no = int(max_no) + 1 if max_no else 2
 
-    return int(max_no) + 1
+    while check_number_exists(next_no):
+        next_no += 1
+
+    return next_no
 
 
 @frappe.whitelist()
 def create_check_run(company: str, payment_date: str, paid_from_account: str | None = None):
+    next_no = get_next_check_number()
+
     doc = frappe.get_doc({
         "doctype": "Check Run",
         "company": company,
         "payment_date": payment_date or nowdate(),
         "status": "Draft",
-        "start_check_number": get_next_check_number(),
-        "next_check_number": get_next_check_number(),
+        "start_check_number": next_no,
+        "next_check_number": next_no,
         "bank_account": paid_from_account or ""
     })
     doc.insert()
@@ -61,7 +78,7 @@ def load_eligible_invoices(company: str, supplier: str | None = None):
             "outstanding_amount",
             "currency"
         ],
-        order_by="due_date asc, posting_date asc"
+        order_by="supplier asc, due_date asc, posting_date asc"
     )
 
     return invoices
@@ -82,8 +99,8 @@ def add_invoices_to_run(check_run_name: str, invoice_names):
         if inv_name in existing:
             continue
 
-        # Block duplicate checks across ALL runs unless voided
-        duplicate = frappe.db.exists(
+        # Block duplicate invoice use across runs
+        duplicate_item = frappe.db.exists(
             "Check Run Item",
             {
                 "invoice_reference": inv_name,
@@ -91,9 +108,23 @@ def add_invoices_to_run(check_run_name: str, invoice_names):
                 "print_status": ["!=", "Voided"]
             }
         )
-        if duplicate:
+        if duplicate_item:
             frappe.throw(
                 _("Invoice {0} already exists in another Check Run Item.").format(inv_name)
+            )
+
+        # Block invoices that already have a submitted payment entry
+        existing_pe_ref = frappe.db.exists(
+            "Payment Entry Reference",
+            {
+                "reference_doctype": "Purchase Invoice",
+                "reference_name": inv_name,
+                "docstatus": 1
+            }
+        )
+        if existing_pe_ref:
+            frappe.throw(
+                _("Invoice {0} already has a submitted Payment Entry.").format(inv_name)
             )
 
         inv = frappe.get_doc("Purchase Invoice", inv_name)
@@ -113,14 +144,42 @@ def add_invoices_to_run(check_run_name: str, invoice_names):
     return doc.as_dict()
 
 
-def _create_payment_entry_for_invoice(invoice_name: str, paid_from_account: str, payment_date: str, check_number: int):
-    pe = get_payment_entry("Purchase Invoice", invoice_name)
+def _append_reference(pe, inv):
+    pe.append("references", {
+        "reference_doctype": "Purchase Invoice",
+        "reference_name": inv.name,
+        "bill_no": getattr(inv, "bill_no", None),
+        "due_date": inv.due_date,
+        "total_amount": inv.grand_total,
+        "outstanding_amount": inv.outstanding_amount,
+        "allocated_amount": inv.outstanding_amount,
+    })
+
+
+def _create_grouped_payment_entry(invoice_names: list[str], paid_from_account: str, payment_date: str, check_number: int):
+    if not invoice_names:
+        frappe.throw(_("No invoices provided for Payment Entry creation."))
+
+    first_invoice = invoice_names[0]
+    pe = get_payment_entry("Purchase Invoice", first_invoice)
 
     pe.posting_date = payment_date
     pe.paid_from = paid_from_account
     pe.reference_no = format_check_number(check_number)
     pe.reference_date = payment_date
     pe.mode_of_payment = "Check"
+
+    # Replace references with all selected invoices for the supplier
+    pe.references = []
+
+    total_allocated = 0
+    for inv_name in invoice_names:
+        inv = frappe.get_doc("Purchase Invoice", inv_name)
+        _append_reference(pe, inv)
+        total_allocated += float(inv.outstanding_amount or 0)
+
+    pe.paid_amount = total_allocated
+    pe.received_amount = total_allocated
 
     pe.insert()
     pe.submit()
@@ -135,55 +194,73 @@ def assign_check_numbers(check_run_name: str):
         if not doc.bank_account:
             frappe.throw(_("Paid From Account is required."))
 
+        # Rows not yet assigned
+        pending_rows = [
+            row for row in (doc.items or [])
+            if row.print_status != "Voided" and not row.check_number and not row.payment_entry
+        ]
+
+        if not pending_rows:
+            return {
+                "ok": True,
+                "message": "No new invoices to assign.",
+                "doc": doc.as_dict(),
+            }
+
+        # Group rows by supplier
+        grouped = {}
+        for row in pending_rows:
+            grouped.setdefault(row.supplier, []).append(row)
+
         next_number = get_next_check_number()
-        sequence = 1
 
-        for row in doc.items or []:
-            if row.print_status == "Voided":
-                continue
+        for supplier, rows in grouped.items():
+            # Make sure proposed check number is unique
+            while check_number_exists(next_number):
+                next_number += 1
 
-            # Skip rows already assigned
-            if row.check_number or row.payment_entry:
-                continue
+            invoice_names = [row.invoice_reference for row in rows]
 
-            # Block duplicate Payment Entries too
-            existing_pe = frappe.db.exists(
-                "Payment Entry Reference",
-                {
-                    "reference_doctype": "Purchase Invoice",
-                    "reference_name": row.invoice_reference,
-                    "docstatus": 1
-                }
-            )
-            if existing_pe:
-                frappe.throw(
-                    _("Invoice {0} already has a submitted Payment Entry.").format(row.invoice_reference)
+            # Extra safety: do not create duplicate submitted payment entries
+            for inv_name in invoice_names:
+                existing_pe_ref = frappe.db.exists(
+                    "Payment Entry Reference",
+                    {
+                        "reference_doctype": "Purchase Invoice",
+                        "reference_name": inv_name,
+                        "docstatus": 1
+                    }
                 )
+                if existing_pe_ref:
+                    frappe.throw(
+                        _("Invoice {0} already has a submitted Payment Entry.").format(inv_name)
+                    )
 
-            row.sequence_no = sequence
-            row.check_number = next_number
-
-            pe = _create_payment_entry_for_invoice(
-                invoice_name=row.invoice_reference,
+            pe = _create_grouped_payment_entry(
+                invoice_names=invoice_names,
                 paid_from_account=doc.bank_account,
                 payment_date=doc.payment_date,
-                check_number=next_number
+                check_number=next_number,
             )
 
-            row.payment_entry = pe.name
-            row.print_status = "Pending"
+            for idx, row in enumerate(rows, start=1):
+                row.sequence_no = idx
+                row.check_number = next_number
+                row.payment_entry = pe.name
+                row.print_status = "Pending"
 
-            sequence += 1
             next_number += 1
 
-        doc.end_check_number = next_number - 1 if next_number > 2 else 0
+        assigned_numbers = [int(row.check_number) for row in (doc.items or []) if row.check_number]
+        doc.start_check_number = min(assigned_numbers) if assigned_numbers else 2
+        doc.end_check_number = max(assigned_numbers) if assigned_numbers else 0
         doc.next_check_number = next_number
         doc.status = "Ready to Print"
         doc.save()
 
         return {
             "ok": True,
-            "message": f"Assigned checks through {format_check_number(next_number - 1)}",
+            "message": f"Assigned grouped checks through {format_check_number(doc.end_check_number)}",
             "doc": doc.as_dict(),
         }
     except Exception:

@@ -68,8 +68,8 @@
         read_only: 1
     });
 
-    const create_btn = $('<button class="btn btn-primary">Create Check Run</button>').appendTo(actions_row);
     const load_btn = $('<button class="btn btn-secondary">Load Eligible Invoices</button>').appendTo(actions_row);
+    const create_btn = $('<button class="btn btn-primary">Create Check Run</button>').appendTo(actions_row);
     const assign_btn = $('<button class="btn btn-primary">Assign Check Numbers</button>').appendTo(actions_row);
     const printed_btn = $('<button class="btn btn-success">Mark Printed</button>').appendTo(actions_row);
 
