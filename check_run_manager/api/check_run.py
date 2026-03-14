@@ -3,6 +3,8 @@ import frappe
 from frappe import _
 from frappe.utils import nowdate, now_datetime
 from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
+from frappe.utils.pdf import get_pdf
+from frappe.www.printview import get_print_style
 
 
 def format_check_number(number: int) -> str:
@@ -36,6 +38,51 @@ def get_next_check_number() -> int:
 
     return next_no
 
+@frappe.whitelist()
+def download_batch_check_pdf(check_run_name: str, print_format: str):
+    import frappe
+
+    doc = frappe.get_doc("Check Run", check_run_name)
+
+    payment_entries = []
+    seen = set()
+
+    for row in doc.items or []:
+        if row.payment_entry and row.payment_entry not in seen and row.print_status != "Voided":
+            seen.add(row.payment_entry)
+            payment_entries.append(row.payment_entry)
+
+    if not payment_entries:
+        frappe.throw("No Payment Entries found for this Check Run.")
+
+    html_parts = []
+    html_parts.append("<html><head>")
+    html_parts.append(get_print_style(print_format=print_format))
+    html_parts.append("</head><body>")
+
+    for idx, pe_name in enumerate(payment_entries):
+        pe = frappe.get_doc("Payment Entry", pe_name)
+
+        html = frappe.get_print(
+            "Payment Entry",
+            pe.name,
+            print_format=print_format,
+            as_pdf=False
+        )
+
+        html_parts.append(html)
+
+        if idx < len(payment_entries) - 1:
+            html_parts.append('<div style="page-break-after: always;"></div>')
+
+    html_parts.append("</body></html>")
+
+    final_html = "".join(html_parts)
+    pdf = get_pdf(final_html)
+
+    frappe.local.response.filename = f"{check_run_name}-checks.pdf"
+    frappe.local.response.filecontent = pdf
+    frappe.local.response.type = "download"
 
 @frappe.whitelist()
 def create_check_run(company: str, payment_date: str, paid_from_account: str | None = None):

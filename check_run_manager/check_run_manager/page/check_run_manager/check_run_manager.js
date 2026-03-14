@@ -71,6 +71,7 @@
     const load_btn = $('<button class="btn btn-secondary">Load Eligible Invoices</button>').appendTo(actions_row);
     const create_btn = $('<button class="btn btn-primary">Create Check Run</button>').appendTo(actions_row);
     const assign_btn = $('<button class="btn btn-primary">Assign Check Numbers</button>').appendTo(actions_row);
+    const batch_print_btn = $('<button class="btn btn-secondary">Batch Print Checks</button>').appendTo(actions_row);
     const printed_btn = $('<button class="btn btn-success">Mark Printed</button>').appendTo(actions_row);
 
     const table = $(`
@@ -185,6 +186,31 @@
             console.error(e);
             frappe.msgprint({
                 title: "Load Eligible Invoices Failed",
+                message: e.message || JSON.stringify(e),
+                indicator: "red"
+            });
+        }
+    });
+
+    batch_print_btn.on("click", async () => {
+        try {
+            if (!getVal(check_run_name)) {
+                frappe.msgprint("Create a Check Run first.");
+                return;
+            }
+
+            const print_format = "AB Carter Check";
+
+            const url =
+                `/api/method/check_run_manager.api.check_run.download_batch_check_pdf` +
+                `?check_run_name=${encodeURIComponent(getVal(check_run_name))}` +
+                `&print_format=${encodeURIComponent(print_format)}`;
+
+            window.open(url, "_blank");
+        } catch (e) {
+            console.error(e);
+            frappe.msgprint({
+                title: "Batch Print Failed",
                 message: e.message || JSON.stringify(e),
                 indicator: "red"
             });
